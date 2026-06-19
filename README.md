@@ -46,29 +46,21 @@ Restart Claude Code (or start a new session) and the skill is picked up automati
 
 ## Installation (Codex)
 
-Codex discovers skills from `~/.agents/skills/` (personal) or `.agents/skills/` (project-scoped — checked in the current working directory, repo root, or a parent directory). Each skill is a directory containing a `SKILL.md`.
-
-### Personal (available in every repository)
+Codex discovers personal skills from `~/.codex/skills/`. Each skill is a directory containing a `SKILL.md`.
 
 ```bash
 git clone https://github.com/dngrtech/minqlx-plugin-review.git /tmp/minqlx-plugin-review
-mkdir -p ~/.agents/skills
-cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review ~/.agents/skills/
-```
-
-### Project-scoped (checked into a repo, shared with collaborators)
-
-```bash
-git clone https://github.com/dngrtech/minqlx-plugin-review.git /tmp/minqlx-plugin-review
-mkdir -p .agents/skills
-cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review .agents/skills/
+mkdir -p ~/.codex/skills
+cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review ~/.codex/skills/
 ```
 
 The final layout must be:
 
 ```
-.agents/skills/minqlx-plugin-review/SKILL.md
+~/.codex/skills/minqlx-plugin-review/SKILL.md
 ```
+
+> **Note:** OpenAI's docs also reference `~/.agents/skills/` (personal) and `.agents/skills/` (project root / cwd / parent) for skill discovery. Use whichever your Codex version reads — if `~/.codex/skills/` doesn't pick it up, install into `~/.agents/skills/` instead (same `<skill-name>/SKILL.md` layout).
 
 Start a new Codex session. The skill activates automatically when your request matches its description, or invoke it explicitly with `/skills` or `$minqlx-plugin-review`.
 
