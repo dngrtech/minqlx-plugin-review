@@ -21,7 +21,7 @@ Claude Code discovers skills from `~/.claude/skills/` (personal) or `<project>/.
 ### Personal (available in every project)
 
 ```bash
-git clone https://github.com/<you>/minqlx-plugin-review.git /tmp/minqlx-plugin-review
+git clone https://github.com/dngrtech/minqlx-plugin-review.git /tmp/minqlx-plugin-review
 mkdir -p ~/.claude/skills
 cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review ~/.claude/skills/
 ```
@@ -29,7 +29,7 @@ cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review ~/.claude/skills/
 ### Project-scoped (checked into a repo, shared with collaborators)
 
 ```bash
-git clone https://github.com/<you>/minqlx-plugin-review.git /tmp/minqlx-plugin-review
+git clone https://github.com/dngrtech/minqlx-plugin-review.git /tmp/minqlx-plugin-review
 mkdir -p .claude/skills
 cp -r /tmp/minqlx-plugin-review/minqlx-plugin-review .claude/skills/
 ```
