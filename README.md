@@ -5,7 +5,7 @@ An AI skill for reviewing, writing, and debugging [minqlx](https://github.com/Mi
 minqlx plugins run inside the Quake Live server process. If you run a blocking HTTP call in an event handler, write to game-state from a background thread, or let an unthrottled command flood the network, this surfaces as visible gameplay spikes and lag.
 
 
-This skill teaches the agent the frame/thread boundaries and library-compatibility pitfalls that cause them.
+This skill teaches the agent the frame/thread boundaries, production performance checks, reload-safety rules, and library-compatibility pitfalls that cause them.
 
 Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.md) format. Install instructions for [Claude Code](#installation-claude-code), [Codex](#installation-codex), [Gemini CLI](#installation-gemini-cli), [Claude Desktop](#installation-claude-desktop), and [Gemini Web Gems](#installation-gemini-web-gems) below.
 
@@ -27,10 +27,16 @@ Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.m
 - **Execution contexts** — `@minqlx.thread` vs `@minqlx.next_frame` vs `@minqlx.delay` vs plain handlers, and the one rule: game-state mutations from a thread must be queued into a game frame.
 - **Frame injection safety** — keeping `@minqlx.next_frame` callbacks minimal; spotting cascading re-fetch anti-patterns.
 - **Rate limiting** — cooldowns on player-triggered commands that spawn HTTP threads (`!elo`, `!balance`, …).
-- **HTTP threading** — never block the 40 fps game loop on a network call.
-- **Batching** — accumulate per-event data and flush on a timer instead of one request per kill.
+- **HTTP safety** — never block the 40 fps game loop on a network call; require timeouts, bounded error handling, cache TTLs, and single-flight request deduplication.
+- **Hot-hook performance** — keep `kill`, `death`, `chat`, `client_command`, `team_switch`, and ZMQ `stats` handlers O(1), append-only, or offloaded.
+- **Batching** — accumulate per-event data and flush on a timer or round/game boundary instead of doing one request or DB write per kill.
+- **Redis / storage performance** — avoid broad `KEYS`, large unpaginated reads, and per-player DB round trips in hot paths; prefer `scan_iter`, indexes, pipelines, and pagination.
+- **Reload-safe workers** — stop long-running threads, sockets, polling loops, and recurring `@minqlx.delay` callbacks on unload.
+- **Player/game lifecycle safety** — re-resolve `Player` objects with `client_id + steam_id`, guard `self.game`, and tolerate disconnects/map changes in delayed callbacks.
+- **Output flood control** — cap, paginate, or throttle commands that emit many `tell`, `reply`, or `msg` lines.
+- **Hook semantics and unsafe parsing** — use `RET_STOP*` deliberately; flag import-time network, self-modifying downloads, `eval`/`exec`, and bare `except`.
 - **Library / environment compatibility** — `redis-py` version drift on minqlx hosts and the try/except compat-shim pattern.
-- **Quick audit steps** — grep-based checks for the common mistakes.
+- **Quick audit steps** — grep-based checks for common production footguns, not just obvious frame/thread mistakes.
 
 ## Installation (Claude Code)
 
@@ -115,7 +121,7 @@ Use this minqlx plugin review checklist:
 !{curl -L https://raw.githubusercontent.com/dngrtech/minqlx-plugin-review/main/minqlx-plugin-review/SKILL.md}
 
 Review, write, or debug the minqlx plugin requested by the user.
-Focus on frame injection safety, thread boundaries, command rate limiting, HTTP batching, and minqlx host compatibility.
+Focus on frame/thread safety, hot-hook performance, HTTP/Redis batching, reload-safe workers, output flood control, stale Player objects, and minqlx host compatibility.
 
 User request: {{args}}
 """
