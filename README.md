@@ -5,7 +5,7 @@ An AI skill for reviewing, writing, and debugging [minqlx](https://github.com/Mi
 minqlx plugins run inside the Quake Live server process. If you run a blocking HTTP call in an event handler, write to game-state from a background thread, or let an unthrottled command flood the network, this surfaces as visible gameplay spikes and lag.
 
 
- — a a — . This skill teaches the agent the frame/thread boundaries and library-compatibility pitfalls that cause them.
+This skill teaches the agent the frame/thread boundaries and library-compatibility pitfalls that cause them.
 
 Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.md) format. Install instructions for [Claude Code](#installation-claude-code) and [Codex](#installation-codex) below.
 
