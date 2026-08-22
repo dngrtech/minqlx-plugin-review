@@ -169,7 +169,7 @@ Red flags: `requests.get(url)` with no `timeout`, unbounded retries, no JSON val
 
 ### 8. Hot hooks are O(1), append-only, or offloaded
 
-Hooks that can fire many times per second must do almost nothing inline: `frame`, `kill`, `death`, `damage`, `chat`, `client_command`, `team_switch`, `userinfo`, and ZMQ `stats` handlers.
+Hooks that can fire many times per second must do almost nothing inline: `frame`, `kill`, `death`, `chat`, `client_command`, `team_switch`, `userinfo`, and ZMQ `stats` handlers — plus `damage` and `weapon_fired`, which exist only on minqlxtended and are the hottest of the event hooks there.
 
 **`frame` is the hottest of all and the easiest to underestimate** — it fires every single game tick, 40 times a second, unconditionally, whether or not anything is happening. It is not event-driven; there is no quiet server. A `frame` handler must self-throttle on its very first lines, before it touches players, cvars, or the DB:
 
@@ -339,7 +339,13 @@ Common 2.x↔3.x differences to shim: `zadd` (mapping dict vs. positional `score
 
 **Ask the user for their `redis-py` version only as a last resort** — when no shim can bridge the difference (rare). For the overwhelming majority of cases the try/except shim removes the question entirely.
 
-**On minqlxtended this concern mostly evaporates:** the engine sets `qlx_redisProtocol` to `3` by default (`_core.py`, `set_cvar_once("qlx_redisProtocol", "3")`), so RESP3 is in play and `database.py` reads that cvar when connecting. The modern `redis-py`/`hiredis` floors come from the plugins repo's `requirements.txt` (`minqlxtended-plugins`, which the engine README tells you to `pip install -r`) — not from the engine repo, which declares no Python dependencies at all. Check that file for the actual pins rather than assuming a version. Either way the 2.x signatures are very unlikely to be in play: existing shims are harmless and worth keeping in code shared between runtimes; don't write *new* ones for a minqlxtended-only plugin.
+**On minqlxtended this concern mostly evaporates.** The engine sets `qlx_redisProtocol` to `3` by default (`_core.py`, `set_cvar_once("qlx_redisProtocol", "3")`), so RESP3 is in play, and `database.py` reads that cvar when connecting. The version floors are `redis>=5.1.0` and `hiredis>=3.0.0`.
+
+Know where those floors actually live: the **plugins** repo's `requirements.txt` (`tjone270/minqlxtended-plugins`, which the engine README tells you to `pip install -r`). The engine repo declares no Python dependencies at all, so "upstream requires redis 5.1" is true of the deployment, not of the engine — if a host installed the engine without that requirements file, none of it is guaranteed.
+
+The 2.x signatures will not be in play on a correctly provisioned host. Existing shims are harmless and worth keeping in code shared between runtimes; don't write *new* ones for a minqlxtended-only plugin.
+
+One performance trap hides in that pin. The requirements file notes that **redis-py 5.1 silently ignores a `hiredis` older than 3.0.0 and falls back to the pure-Python parser** — no error, no warning, just a slower parse on every call. On a host doing per-player Redis reads in a hot path that is a real regression with no symptom pointing at it. If Redis work looks inexplicably expensive, check the installed `hiredis` version before optimising the plugin.
 
 ---
 
