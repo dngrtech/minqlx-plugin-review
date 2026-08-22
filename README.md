@@ -1,11 +1,14 @@
 # minqlx-plugin-review
 
-An AI skill for reviewing, writing, and debugging [minqlx](https://github.com/MinoMino/minqlx) plugins for Quake Live dedicated servers.
+An AI skill for reviewing, writing, and debugging [minqlx](https://github.com/MinoMino/minqlx) and [minqlxtended](https://github.com/tjone270/minqlxtended) plugins for Quake Live dedicated servers.
 
-minqlx plugins run inside the Quake Live server process. If you run a blocking HTTP call in an event handler, write to game-state from a background thread, or let an unthrottled command flood the network, this surfaces as visible gameplay spikes and lag.
-
+Plugins on both runtimes run inside the Quake Live server process. If you run a blocking HTTP call in an event handler, write to game-state from a background thread, or let an unthrottled command flood the network, this surfaces as visible gameplay spikes and lag.
 
 This skill teaches the agent the frame/thread boundaries, production performance checks, reload-safety rules, and library-compatibility pitfalls that cause them.
+
+It covers both runtimes. minqlx and minqlxtended are hard forks and plugins are not portable between them, so the skill first establishes which one it is looking at, then applies the API deltas — changed and new event signatures, enum constants, property access — on top of the shared checklist.
+
+The minqlxtended API details are verified against the engine source at **v1.0.0**, not against upstream's release notes, which undercount both the changed event signatures and the removed engine functions. Re-check them against `python/minqlxtended/_events.py` if you are on a later version.
 
 Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.md) format. Install instructions for [Claude Code](#installation-claude-code), [Codex](#installation-codex), [Gemini CLI](#installation-gemini-cli), [Claude Desktop](#installation-claude-desktop), and [Gemini Web Gems](#installation-gemini-web-gems) below.
 
@@ -28,13 +31,15 @@ Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.m
 - **Frame injection safety** — keeping `@minqlx.next_frame` callbacks minimal; spotting cascading re-fetch anti-patterns.
 - **Rate limiting** — cooldowns on player-triggered commands that spawn HTTP threads (`!elo`, `!balance`, …).
 - **HTTP safety** — never block the 40 fps game loop on a network call; require timeouts, bounded error handling, cache TTLs, and single-flight request deduplication.
-- **Hot-hook performance** — keep `kill`, `death`, `chat`, `client_command`, `team_switch`, and ZMQ `stats` handlers O(1), append-only, or offloaded.
+- **Hot-hook performance** — keep `frame`, `kill`, `death`, `chat`, `client_command`, `team_switch`, and ZMQ `stats` handlers O(1), append-only, or offloaded. `frame` gets its own treatment: it fires every tick unconditionally and must self-throttle on its first lines, off `sv_fps` rather than a hardcoded 40.
 - **Batching** — accumulate per-event data and flush on a timer or round/game boundary instead of doing one request or DB write per kill.
 - **Redis / storage performance** — avoid broad `KEYS`, large unpaginated reads, and per-player DB round trips in hot paths; prefer `scan_iter`, indexes, pipelines, and pagination.
 - **Reload-safe workers** — stop long-running threads, sockets, polling loops, and recurring `@minqlx.delay` callbacks on unload.
 - **Player/game lifecycle safety** — re-resolve `Player` objects with `client_id + steam_id`, guard `self.game`, and tolerate disconnects/map changes in delayed callbacks.
 - **Output flood control** — cap, paginate, or throttle commands that emit many `tell`, `reply`, or `msg` lines.
 - **Hook semantics and unsafe parsing** — use `RET_STOP*` deliberately; flag import-time network, self-modifying downloads, `eval`/`exec`, and bare `except`.
+- **Console-command injection** — the engine console treats `;` as a separator, so caller-controlled input formatted into `console_command()` or `set_cvar()` runs arbitrary commands. Requires anchored allow-lists, and treats a permission level as a mitigation rather than a fix.
+- **minqlxtended differences** — signatures validated at registration (one stale handler blocks the whole plugin from loading), the eleven changed event signatures (upstream documents six) and six new events, enum constants (`Return.STOP_ALL`, `Priority.LOWEST`, `Weapon.RAILGUN`), setters replaced by property access, `team_scores` in place of `red_score`/`blue_score`, and a porting checklist.
 - **Library / environment compatibility** — `redis-py` version drift on minqlx hosts and the try/except compat-shim pattern.
 - **Quick audit steps** — grep-based checks for common production footguns, not just obvious frame/thread mistakes.
 
@@ -115,13 +120,13 @@ For a global `/minqlx-plugin-review` command, create a Gemini CLI custom command
 ```bash
 mkdir -p ~/.gemini/commands
 cat > ~/.gemini/commands/minqlx-plugin-review.toml <<'EOF'
-description = "Review, write, or debug minqlx plugins for Quake Live server safety."
+description = "Review, write, or debug minqlx/minqlxtended plugins for Quake Live server safety."
 prompt = """
 Use this minqlx plugin review checklist:
 !{curl -L https://raw.githubusercontent.com/dngrtech/minqlx-plugin-review/main/minqlx-plugin-review/SKILL.md}
 
-Review, write, or debug the minqlx plugin requested by the user.
-Focus on frame/thread safety, hot-hook performance, HTTP/Redis batching, reload-safe workers, output flood control, stale Player objects, and minqlx host compatibility.
+Review, write, or debug the minqlx or minqlxtended plugin requested by the user.
+Focus on frame/thread safety, hot-hook performance, HTTP/Redis batching, reload-safe workers, output flood control, stale Player objects, console-command injection, and cross-runtime API differences.
 
 User request: {{args}}
 """
