@@ -359,24 +359,40 @@ This is the single most important difference. `add_hook()` inspects the handler'
 
 Practically, this is good news for review: failures are loud and early rather than latent. But it means a plugin with six correct handlers and one wrong one gives you *nothing* — not a partly-working plugin. When a ported plugin "doesn't load", check every handler signature before anything else.
 
-### Eleven event signatures changed
+### Nine event signatures changed — and compare handler contracts, not `def dispatch` lines
 
-Upstream's README calls out "the six events that used to come off the ZMQ stats feed" — those now come from the game module, so **`zmq_stats_enable 1` is no longer mandatory** for them. But six is the count of *that* group, not of all signature changes. Diffing every dispatcher in both runtimes gives **eleven**:
+Upstream's README calls out "the six events that used to come off the ZMQ stats feed" — those now come from the game module, so **`zmq_stats_enable 1` is no longer mandatory** for them. Six is the count of *that* group, not of all signature changes. The real count is **nine**, six of which change the argument *count*:
 
 | Event | minqlx | minqlxtended |
 |---|---|---|
 | `player_connect` | `(player)` | `(player, is_bot)` |
 | `game_start` | `(data)` | `()` |
-| `game_end` | `(data)` — stats dict | `(aborted)` — a flag |
 | `round_end` | `(data)` | `(round_number, winning_team, time)` |
 | `team_switch_attempt` | `(player, old_team, new_team)` | `(player, old_team, new_team, target)` |
-| `kill` / `death` | `(victim, killer, data)` — stats dict | `(victim, killer, mod)` — means of death |
 | `chat` | `(player, msg, channel)` | `(player, msg, channel, recipient)` |
 | `userinfo` | `(player, changed)` | `(player, changed, infostring)` |
-| `vote_ended` | `(passed)` | `(votes, vote, args, passed)` |
-| `vote_started` | `(vote, args)` | `(caller, vote, args)` |
+| `game_end` | `(data)` — stats dict | `(aborted)` — a flag |
+| `kill` / `death` | `(victim, killer, data)` — stats dict | `(victim, killer, mod)` — means of death |
 
-The last four are easy to miss because they have nothing to do with ZMQ stats, and `chat` in particular is hooked by a large fraction of plugins in the wild. A 3-argument `chat` handler or a 1-argument `vote_ended` handler will not bind, so the plugin does not load at all.
+`chat` and `userinfo` are the ones everybody misses: they have nothing to do with ZMQ stats, so they fall outside the group the README names, and `chat` is hooked by a large fraction of plugins in the wild.
+
+**`chat`'s fourth parameter is declared `recipient=None` and is still mandatory on your handler.** `_check_handler_signature` takes the dispatcher's parameter *names* — `_handler_parameters` does not filter out defaulted ones — and calls `signature.bind(*[None] * len(expected))`. Binding four positionals onto a three-parameter handler raises `TypeError`, so the hook is refused and the plugin does not load. Reading `recipient=None` as "optional, 3 still works" is a live trap: it is what shipped a broken `handle_chat` in QLSM's own `myFun.py` port past a full test suite.
+
+#### `vote_started` and `vote_ended` look changed and are not
+
+Both keep the same **handler** contract across runtimes — 3 and 4 arguments respectively — even though their `def dispatch` lines differ. minqlx's dispatchers forward a *different* argument list than they accept:
+
+```python
+# minqlx _events.py:431 — engine calls dispatch(passed); HANDLERS get four arguments
+class VoteEndedDispatcher(EventDispatcher):
+    def dispatch(self, passed):
+        ...
+        super().dispatch(votes, vote, args, passed)
+```
+
+`VoteStartedDispatcher` does the same with `self._caller`. So `handle_vote_ended(self, votes, vote, args, passed)` and `handle_vote_started(self, caller, vote, args)` are correct on **both** runtimes and need no porting work.
+
+The general lesson matters more than these two cases: **diff what handlers receive, not what `dispatch()` accepts.** On minqlx that means reading the `super().dispatch(...)` call inside the body, because that is the handler-facing contract. A diff built from `def dispatch` lines alone reports eleven changes, two of them false, and sends you off to "fix" working code.
 
 Genuinely unchanged, safe to leave alone: `frame` `()`, `map` `(mapname, factory)`, `player_disconnect` `(player, reason)`, `player_loaded` `(player)`, `player_spawn` `(player)`, `console_print` `(text)`, `set_configstring` `(index, value)`, `round_start`/`round_countdown` `(round_number)`, `new_game` `()`, `team_switch` `(player, old_team, new_team)`, `client_command`/`server_command` `(player, cmd)`, `command` `(caller, command, args)`, `vote` `(player, yes)`, `vote_called` `(player, vote, args)`, `stats` `(stats)`, `unload` `(plugin)`, `game_countdown` `()`, `kamikaze_use` `(player)`, `kamikaze_explode` `(player, is_used_on_demand)`.
 
@@ -388,7 +404,9 @@ These have no minqlx equivalent — 32 events there, 38 here. Nothing to port, b
 
 The authoritative list is `python/minqlxtended/_events.py` — each dispatcher class's `dispatch()` parameter list, minus `self`. Read it rather than guessing; don't trust this table over the source if the two ever disagree.
 
-Watch for handlers that *silently* still work but now mean something else. `handle_game_end(self, data)` binds fine to `(aborted)` — one positional argument either way — so it registers, then reads `data["ABORTED"]` on a bool and raises at game end. `handle_vote_ended(self, passed)` is the same trap: it binds to `(votes, ...)` and reads a vote-count tuple as a boolean.
+That shortcut is safe **on minqlxtended only**, and for a specific reason: no minqlxtended dispatcher forwards anything other than what it declares, so declared params and handler contract are the same list — which is also why `_handler_params` can be derived from `dispatch` at all. On minqlx the two come apart, and `vote_started`/`vote_ended` are the only two places they do. Read the `super().dispatch(...)` call there.
+
+Watch for handlers that *silently* still work but now mean something else. `handle_game_end(self, data)` binds fine to `(aborted)` — one positional argument either way — so it registers, then reads `data["ABORTED"]` on a bool and raises at game end. `kill` and `death` are the same shape of trap: three arguments either way, but the third goes from a stats dict to a means-of-death value.
 
 ### Every constant family is an enum
 
@@ -425,7 +443,7 @@ Guard the access: `Game` raises `NonexistentGameError` — a bare `Exception` su
 
 ### Review checklist for a ported plugin
 
-1. Every handler signature matches the event's current arity — this is pass/fail for the whole plugin.
+1. Every handler signature matches the event's current arity — this is pass/fail for the whole plugin. Check `chat` and `userinfo` explicitly; they are outside the ZMQ-stats group most porting notes enumerate. Do not "fix" `vote_started`/`vote_ended`, which only look changed.
 2. No bare `minqlx` identifier survives. **Tokenise, don't grep**: these files legitimately contain the string `minqlx` in Redis key prefixes (`minqlx:players:...`, which are an app-level contract, not an API), Steam Workshop item titles, and docstrings. Only a NAME token is a module reference. Note also that `minqlx` is a prefix of `minqlxtended`, so a naive `grep minqlx` matches every correct line.
 3. No `RET_` / `PRI_` / `WP_` constant survives anywhere, including branches that are hard to reach.
 4. Redis key names kept as-is unless there is a reason to change them — they are usually a contract with something outside the plugin, and renaming buys nothing but a migration.
