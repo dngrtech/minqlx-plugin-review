@@ -16,17 +16,18 @@ This document is directional. `minqlxtended → minqlx` is not a mechanical inve
 ## Conversion procedure
 
 1. Preserve the original plugin as the source of truth; write the converted plugin separately until it imports and registers.
-2. Replace only Python **identifier tokens** `minqlx` with `minqlxtended`. Do not replace string literals, comments, Redis key prefixes such as `minqlx:players:*`, filenames, or Workshop metadata.
-3. Convert every hook handler using the event table below. In minqlxtended, hook signatures are checked during registration: one stale handler prevents the entire plugin from loading.
-4. Convert all old `RET_*`, `PRI_*`, and `WP_*` identifiers to enum members. Search every branch, not only paths exercised in a smoke test.
-5. Replace removed single-field functions with the equivalent `Player` or `Game` property mutation. Do not retain a compatibility wrapper that calls an absent engine function.
-6. Convert score reads to `Game.team_scores` indexed by `Team.index`; never unpack it as a red/blue pair.
-7. Keep Redis key names unchanged unless a deliberate data migration accompanies the port.
-8. Run the offline static checks in this document, then run the plugin on the target server or a matching test runtime before declaring success.
+2. Convert every import before changing call sites. Expand wildcard imports; never carry `from minqlx import *` into the port.
+3. Replace only Python **identifier tokens** `minqlx` with `minqlxtended`. Do not replace string literals, comments, Redis key prefixes such as `minqlx:players:*`, filenames, or Workshop metadata.
+4. Inventory **all** hook registrations. Convert each changed event using the table below; for unchanged or dynamic registrations, record the expected signature or mark it for runtime-registration verification. In minqlxtended, one stale handler prevents the entire plugin from loading.
+5. Convert all old `RET_*`, `PRI_*`, and `WP_*` identifiers to enum members. Search every branch, not only paths exercised in a smoke test.
+6. Replace removed functions using the pinned mapping below. Do not retain a compatibility wrapper that calls an absent engine function.
+7. Convert score reads to `Game.team_scores` indexed by `Team.index`; never unpack it as a red/blue pair.
+8. Keep Redis key names unchanged unless a deliberate data migration accompanies the port.
+9. Run the offline checker and manual review steps in this document, then run an import/registration smoke test on the target server or a matching test runtime before declaring success.
 
 ## Mechanical API changes
 
-### Import and decorators
+### Imports, namespace, and decorators
 
 ```python
 # before
@@ -47,6 +48,19 @@ class example(minqlxtended.Plugin):
 ```
 
 Apply the same namespace conversion to `Plugin`, `NonexistentPlayerError`, `NonexistentGameError`, `console_command`, `get_cvar`, `set_cvar`, `hook`, `command`, and all other engine-facing names. A bare `minqlx` NAME token is a defect; a literal containing `minqlx` is not necessarily one.
+
+For direct imports, preserve only supported names explicitly:
+
+```python
+# before
+from minqlx import Plugin, RET_STOP_ALL, PRI_LOWEST
+
+# after
+from minqlxtended import Plugin, Return, Priority
+# RET_STOP_ALL -> Return.STOP_ALL; PRI_LOWEST -> Priority.LOWEST at every use
+```
+
+Reject wildcard imports and direct imports of `RET_*`, `PRI_*`, or `WP_*`. `from minqlxtended import RET_STOP_ALL` is invalid; the target deliberately exposes enums instead.
 
 ### Return, priority, and weapon constants
 
@@ -81,6 +95,8 @@ Only these existing events need handler changes. The signatures below are what t
 
 **False alarms:** leave `vote_started(caller, vote, args)` and `vote_ended(votes, vote, args, passed)` unchanged. minqlx declares different `dispatch()` parameters internally but forwards the same handler contracts.
 
+For every unchanged static registration, preserve its handler arity. For a dynamic name, alias, helper, generated callback, or any registration the checker cannot resolve, leave a migration note and require target-runtime registration verification; do not mark it fully statically verified.
+
 ### Extended-only events
 
 These have no minqlx equivalent and need no conversion when going toward minqlxtended:
@@ -94,19 +110,27 @@ These have no minqlx equivalent and need no conversion when going toward minqlxt
 
 Do not invent handlers for these during a mechanical port. `damage` and `weapon_fired` are hot hooks and require a separate performance review.
 
-### Removed single-field engine functions
+### Removed engine functions
 
-These minqlx functions are absent from minqlxtended:
+These minqlx functions are absent from minqlxtended. The table is the pinned `v1.1.0-5-ga3de947` replacement contract; resolve the same player target before using the replacement.
 
-```
-set_ammo              set_armor          set_flight
-set_health            set_holdable       set_invulnerability
-set_position          set_powerups       set_privileges
-set_score             set_velocity       set_weapon
-set_weapons           noclip             allow_single_player
-```
-
-Replace the first thirteen according to the original operation with direct property access on the relevant object. Preserve the old value semantics—especially collections such as ammo, weapons, powerups, and position—rather than guessing a scalar assignment. `noclip` and `allow_single_player` are not property renames: redesign that feature against the target server's supported API.
+| Removed minqlx function | minqlxtended replacement | Value shape / caveat |
+|---|---|---|
+| `set_ammo` | `player.ammo = value` | `Weapons` collection |
+| `set_armor` | `player.armor = value` | integer |
+| `set_flight` | `player.flight = value` | `Flight`; setting grants flight holdable if needed |
+| `set_health` | `player.health = value` | integer |
+| `set_holdable` | `player.holdable = value` | `Holdable` or `None` |
+| `set_invulnerability` | `player.invulnerability(time)` | **method**, not property assignment |
+| `set_position` | `player.position = value` | `Vector3` |
+| `set_powerups` | `player.powerups = value` | `Powerups` collection |
+| `set_privileges` | `player.privileges = value` | `Privilege` or `None` |
+| `set_score` | `player.score = value` | integer |
+| `set_velocity` | `player.velocity = value` | `Vector3` |
+| `set_weapon` | `player.weapon = value` | `Weapon` enum |
+| `set_weapons` | `player.weapons = value` | `Weapons` collection |
+| `noclip` | `player.noclip = enabled` | boolean property |
+| `allow_single_player` | no pinned direct equivalent | leave a manual migration blocker; redesign only against the target runtime |
 
 `Plugin.kick(...)` is also gone. `Player.kick(reason)` survives. If the old code invokes `self.kick(...)`, resolve the player and call the player method instead; preserve the original target-selection and reason logic.
 
@@ -127,15 +151,21 @@ blue = scores[minqlxtended.Team.BLUE.index]
 
 ## Offline acceptance checks
 
-Perform these after editing; they work without the engine source:
+Run the checked-in stdlib-only scanner over the converted plugin directory:
 
-1. Tokenise Python source and assert there is no NAME token exactly equal to `minqlx`.
-2. Assert no NAME token begins with `RET_`, `PRI_`, or `WP_`.
-3. Enumerate every `add_hook(...)` and `@minqlxtended.hook(...)`; compare handlers for the nine events above to the target arity.
-4. Search for all 15 removed function names and `self.kick(`; each match needs a deliberate rewrite or an explicit non-code/documentation exclusion.
-5. Search for `red_score` and `blue_score`; replace actual API accesses with `team_scores` indexing.
-6. Compile every converted Python file with the target Python version when available. Compilation catches syntax and import-adjacent mistakes, not API registration errors.
-7. Audit behavioural conversions: `game_end`, `kill`, `death`, `round_end`, and the removed setters cannot be safely validated by a textual rename alone.
+```bash
+python3 /path/to/minqlx-plugin-review/minqlx-plugin-review/scripts/check_minqlxtended_port.py /path/to/converted-plugin
+```
+
+It reports file/line violations for old namespaces, legacy constants, legacy direct imports, wildcard imports, removed APIs, score fields, and supported static hook forms. Its hook inventory is deliberately conservative: it reports dynamic registrations as manual-review items rather than pretending to understand arbitrary Python.
+
+Then perform these manual checks:
+
+1. For every static hook inventory entry, verify changed events against the table and unchanged events retain their known handler arity.
+2. For every dynamic/manual hook entry, record the handler contract or mark it **requires target-runtime registration verification**.
+3. Review every `game_end`, `kill`, `death`, and `round_end` conversion; their similar arity hides semantic changes.
+4. Review every removed-API match against the mapping table. An `allow_single_player` match is a blocker, not a completed port.
+5. `py_compile` is syntax-only: it does **not** import `minqlxtended`, resolve attributes, or register hooks. A matching runtime must import and instantiate the plugin before success can be claimed.
 
 ## What this cannot prove
 

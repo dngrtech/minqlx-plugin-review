@@ -1,6 +1,6 @@
 ---
 name: minqlx-plugin-review
-description: Use when reviewing, writing, or debugging minqlx or minqlxtended plugins. Covers frame/thread safety, hot-hook performance, HTTP/Redis batching, reload-safe workers, output flood control, console-command injection, and cross-runtime API differences.
+description: Use when reviewing, writing, debugging, porting, converting, or migrating minqlx and minqlxtended plugins. Covers frame/thread safety, hot-hook performance, HTTP/Redis batching, reload-safe workers, output flood control, console-command injection, and cross-runtime API differences.
 ---
 
 # minqlx Plugin Review
@@ -26,11 +26,11 @@ imports `minqlxtended`.
 
 ## Converting a plugin without engine source
 
-When asked to port a plugin from `minqlx` to `minqlxtended`, use
+When asked to port a plugin from `minqlx` to `minqlxtended`, **open and read
 [`references/minqlx-to-minqlxtended-porting.md`](references/minqlx-to-minqlxtended-porting.md)
-as the first-pass conversion contract. It is source-derived and self-contained:
-it gives the frozen API baseline, mechanical replacements, event signatures,
-removed APIs, and offline acceptance checks. Do not require a local
+in full before editing.** It is the canonical first-pass conversion contract:
+the frozen API baseline, mechanical replacements, event signatures, removed
+APIs, and offline acceptance checks live there. Do not require a local
 minqlxtended checkout merely to start this known-version conversion.
 
 A target runtime is still the final authority for a newer or forked build and
@@ -497,4 +497,4 @@ Guard the access: `Game` raises `NonexistentGameError` — a bare `Exception` su
 12. **Search for import-time network or code downloads** — reject `requests` calls and downloaded `.py` writes during import/`__init__` unless explicitly optional, timeout-bound, and failure-isolated.
 13. **Search for `console_command(` and `set_cvar(`** — any `.format(`, f-string, or `%` on caller-derived input is a console-injection hole. A permission level is not a fix. Check allow-lists are anchored `\Z`, not `$`.
 14. **Search for `add_hook("frame"`** — verify the handler self-throttles on its first lines, before touching players, cvars, or the DB, and derives its budget from `sv_fps` rather than hardcoding 40.
-15. **If the plugin imports `minqlxtended`** — check every handler signature against `_events.py` (registration is pass/fail for the whole plugin), then sweep for surviving `RET_`/`PRI_`/`WP_` constants, `red_score`/`blue_score`, the 15 removed engine functions (`set_health`/`set_score`/`set_position`/… plus `noclip`, `allow_single_player`), and bare `minqlx` NAME tokens. Tokenise for that last one; `grep minqlx` also matches every correct `minqlxtended` line, and the string appears legitimately in Redis keys and docstrings.
+15. **If the plugin imports `minqlxtended`** — for a port, first use the canonical offline reference and its checker. If a matching target checkout is available, compare every handler signature against `_events.py` too (registration is pass/fail for the whole plugin). Sweep for surviving `RET_`/`PRI_`/`WP_` constants, `red_score`/`blue_score`, the removed engine functions, and bare `minqlx` NAME tokens. Tokenise for that last one; `grep minqlx` also matches every correct `minqlxtended` line, and the string appears legitimately in Redis keys and docstrings.
