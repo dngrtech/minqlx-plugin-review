@@ -8,7 +8,7 @@ This skill teaches the agent the frame/thread boundaries, production performance
 
 It covers both runtimes. minqlx and minqlxtended are hard forks and plugins are not portable between them, so the skill first establishes which one it is looking at, then applies the API deltas — changed and new event signatures, enum constants, property access — on top of the shared checklist.
 
-The minqlxtended API details are verified against the engine source at **v1.0.0**, not against upstream's release notes, which undercount both the changed event signatures and the removed engine functions. Re-check them against `python/minqlxtended/_events.py` if you are on a later version.
+The skill includes a self-contained, source-derived [`minqlx → minqlxtended` porting reference](minqlx-plugin-review/references/minqlx-to-minqlxtended-porting.md), so an agent can perform the known-version conversion without a local engine checkout. The baseline is minqlx `fbdd915` and minqlxtended `v1.1.0-5-ga3de947`. A target checkout is still the final authority for newer or forked builds and runtime verification.
 
 Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.md) format. Install instructions for [Claude Code](#installation-claude-code), [Codex](#installation-codex), [Gemini CLI](#installation-gemini-cli), [Claude Desktop](#installation-claude-desktop), and [Gemini Web Gems](#installation-gemini-web-gems) below.
 
@@ -39,6 +39,7 @@ Works with any agent that supports the [`SKILL.md`](minqlx-plugin-review/SKILL.m
 - **Output flood control** — cap, paginate, or throttle commands that emit many `tell`, `reply`, or `msg` lines.
 - **Hook semantics and unsafe parsing** — use `RET_STOP*` deliberately; flag import-time network, self-modifying downloads, `eval`/`exec`, and bare `except`.
 - **Console-command injection** — the engine console treats `;` as a separator, so caller-controlled input formatted into `console_command()` or `set_cvar()` runs arbitrary commands. Requires anchored allow-lists, and treats a permission level as a mitigation rather than a fix.
+- **Offline plugin conversion** — a source-derived `minqlx → minqlxtended` migration reference with a frozen version contract, mechanical replacements, hook-signature table, removed API list, semantic traps, and static acceptance checks. It lets an agent make the known-version port without a local minqlxtended checkout.
 - **minqlxtended differences** — signatures validated at registration (one stale handler blocks the whole plugin from loading), the nine changed event signatures (upstream documents six; two more that only look changed are called out as false alarms) and six new events, enum constants (`Return.STOP_ALL`, `Priority.LOWEST`, `Weapon.RAILGUN`), setters replaced by property access, `team_scores` in place of `red_score`/`blue_score`, and a porting checklist.
 - **Library / environment compatibility** — `redis-py` version drift on minqlx hosts and the try/except compat-shim pattern; on minqlxtended, where the version floors actually live and the silent `hiredis` fallback that costs performance without raising anything.
 - **Quick audit steps** — grep-based checks for common production footguns, not just obvious frame/thread mistakes.

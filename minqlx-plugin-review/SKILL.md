@@ -24,6 +24,19 @@ Everything below applies to both unless marked otherwise. The API deltas are in
 **minqlxtended Differences** near the end; read that section too if the plugin
 imports `minqlxtended`.
 
+## Converting a plugin without engine source
+
+When asked to port a plugin from `minqlx` to `minqlxtended`, use
+[`references/minqlx-to-minqlxtended-porting.md`](references/minqlx-to-minqlxtended-porting.md)
+as the first-pass conversion contract. It is source-derived and self-contained:
+it gives the frozen API baseline, mechanical replacements, event signatures,
+removed APIs, and offline acceptance checks. Do not require a local
+minqlxtended checkout merely to start this known-version conversion.
+
+A target runtime is still the final authority for a newer or forked build and
+for runtime verification. If it is unavailable, complete the bounded static
+port and state that the result has not been registered against that target.
+
 ---
 
 ## Execution Contexts
@@ -447,6 +460,12 @@ Guard the access: `Game` raises `NonexistentGameError` — a bare `Exception` su
 2. No bare `minqlx` identifier survives. **Tokenise, don't grep**: these files legitimately contain the string `minqlx` in Redis key prefixes (`minqlx:players:...`, which are an app-level contract, not an API), Steam Workshop item titles, and docstrings. Only a NAME token is a module reference. Note also that `minqlx` is a prefix of `minqlxtended`, so a naive `grep minqlx` matches every correct line.
 3. No `RET_` / `PRI_` / `WP_` constant survives anywhere, including branches that are hard to reach.
 4. Redis key names kept as-is unless there is a reason to change them — they are usually a contract with something outside the plugin, and renaming buys nothing but a migration.
+
+---
+
+## References
+
+- [`references/minqlx-to-minqlxtended-porting.md`](references/minqlx-to-minqlxtended-porting.md) — self-contained `minqlx → minqlxtended` migration matrix and offline checks.
 
 ---
 
